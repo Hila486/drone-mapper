@@ -1,0 +1,45 @@
+#include "SparseBuildingMap.h"
+
+// Constructor.
+// Creates a 3D map with sizeX * sizeY * sizeZ cells.
+// Unlike GroundTruthMap, this map starts with CellState::Unmapped,
+// because the drone does not know the world at the beginning.
+SparseBuildingMap::SparseBuildingMap(int sizeX, int sizeY, int sizeZ)
+    : sizeX(sizeX),
+      sizeY(sizeY),
+      sizeZ(sizeZ),
+      cells(sizeX * sizeY * sizeZ, CellState::Unmapped) {
+}
+
+// Checks whether a given position is inside the map boundaries.
+bool SparseBuildingMap::isInside(const Position& pos) const {
+    return pos.x >= 0 && pos.x < sizeX &&
+           pos.y >= 0 && pos.y < sizeY &&
+           pos.z >= 0 && pos.z < sizeZ;
+}
+
+// Converts a 3D position (x, y, z) into a 1D vector index.
+// The cells are stored in one long vector instead of a real 3D array.
+int SparseBuildingMap::index(const Position& pos) const {
+    return pos.z * sizeX * sizeY + pos.y * sizeX + pos.x;
+}
+
+// Returns the cell state at the given position.
+// If the position is outside the map, returns OutOfBounds.
+CellState SparseBuildingMap::getCell(const Position& pos) const {
+    if (!isInside(pos)) {
+        return CellState::OutOfBounds;
+    }
+
+    return cells[index(pos)];
+}
+
+// Updates the cell state at the given position.
+// If the position is outside the map, the function does nothing.
+void SparseBuildingMap::setCell(const Position& pos, CellState state) {
+    if (!isInside(pos)) {
+        return;
+    }
+
+    cells[index(pos)] = state;
+}

@@ -1,0 +1,13 @@
+include/GroundTruthMap.h - Declares the GroundTruthMap class, which represents the real world map known only to the simulator and mock sensors.
+
+src/GroundTruthMap.cpp - Implements the real world map logic, including boundary checks, 3D-to-1D index conversion, reading cells, and updating real cell states.
+
+include/SparseBuildingMap.h - Declares the SparseBuildingMap class, which represents the drone’s discovered map and starts with all cells marked as Unmapped.
+
+src/SparseBuildingMap.cpp - Implements the drone’s discovered map logic, including boundary checks, 3D-to-1D index conversion, reading cells, and updating discovered cell states.
+
+include/DroneState.h - Defines DroneState, which stores the drone’s actual current position and angle during the simulation.
+
+include/IPositionSensor.h - Declares the position sensor interface, allowing the drone to ask for its current pose without directly accessing DroneState.
+
+src/MockPositionSensor.cpp - Implements the mock position sensor, which returns the current pose stored in DroneState.
