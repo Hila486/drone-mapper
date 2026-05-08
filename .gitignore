@@ -1,4 +1,8 @@
-build/ 
-*.o 
-*.out 
-.vscode/ 
+build/
+cmake-build-*/
+*.exe
+*.o
+*.out
+.vscode/
+map_output.txt
+input_errors.txt
