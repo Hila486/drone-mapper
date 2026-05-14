@@ -12,6 +12,8 @@ add_executable(my_exe
     src/ConfigParser.cpp
     src/MapFileWriter.cpp
     src/ScoreCalculator.cpp
+    src/simulator.cpp
+    src/MockMovementDriver.cpp
 )
 
 

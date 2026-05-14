@@ -6,10 +6,10 @@
 /*
     Constructor.
 
-    We store references, not copies.
-
-    This is important because when this class updates droneState,
-    the simulator and sensors should see the updated position too.
+    We keep references to the simulator objects:
+    - droneState: so this driver can update the drone's real position
+    - droneConfig: so this driver can check movement limits
+    - worldMap: so this driver can prevent collisions
 */
 MockMovementDriver::MockMovementDriver(
     DroneState& droneState,
@@ -22,7 +22,12 @@ MockMovementDriver::MockMovementDriver(
 }
 
 /*
-    Normalize angle to the range [0, 359].
+    Converts any angle to the range [0, 359].
+
+    Examples:
+    360  -> 0
+    -90  -> 270
+    450  -> 90
 */
 Degree MockMovementDriver::normalizeAngle(Degree angle) const {
     Degree result = angle % 360;
@@ -35,11 +40,11 @@ Degree MockMovementDriver::normalizeAngle(Degree angle) const {
 }
 
 /*
-    Checks if a position is legal for the drone.
+    Checks if the drone can move to a target position.
 
-    The drone cannot move:
-    - outside the map
-    - into an occupied cell
+    The movement is blocked if:
+    - the position is outside the map
+    - the position is occupied
 */
 bool MockMovementDriver::canMoveTo(const Position& position) const {
     CellState cell = worldMap.getCell(position);
@@ -60,17 +65,17 @@ bool MockMovementDriver::canMoveTo(const Position& position) const {
 }
 
 /*
-    Rotates the drone.
+    Rotates the drone left or right.
 
-    Angle convention from the assignment:
+    Assignment angle convention:
     0   = east
     90  = south
     180 = west
     270 = north
 
-    Therefore:
-    - turning right increases the angle
-    - turning left decreases the angle
+    In this implementation:
+    - Right turn increases the angle.
+    - Left turn decreases the angle.
 */
 bool MockMovementDriver::rotate(RotationDirection direction, Degree angle) {
     if (std::abs(angle) > droneConfig.maxRotateDeg) {
@@ -95,15 +100,13 @@ bool MockMovementDriver::rotate(RotationDirection direction, Degree angle) {
 }
 
 /*
-    Advances the drone forward/backward.
+    Moves the drone forward or backward.
 
-    For now, this implementation supports the four main directions:
-    0   = east
-    90  = south
-    180 = west
-    270 = north
+    Positive distance = forward.
+    Negative distance = backward.
 
-    This is enough for our current grid-based simulator.
+    For now, we support only the four grid directions:
+    0, 90, 180, 270.
 */
 bool MockMovementDriver::advance(Cm distance) {
     if (std::abs(distance) > droneConfig.maxAdvanceCm) {
@@ -143,10 +146,10 @@ bool MockMovementDriver::advance(Cm distance) {
 }
 
 /*
-    Elevates the drone up/down.
+    Moves the drone up or down.
 
-    Positive distance increases height.
-    Negative distance decreases height.
+    Positive distance = up.
+    Negative distance = down.
 */
 bool MockMovementDriver::elevate(Cm distance) {
     if (std::abs(distance) > droneConfig.maxElevateCm) {
