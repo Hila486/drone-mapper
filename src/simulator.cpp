@@ -1,5 +1,6 @@
 #include "simulator.h"
 
+#include <cmath>
 #include <iostream>
 
 #include "Types.h"
@@ -9,10 +10,11 @@
 #include "SparseBuildingMap.h"
 #include "DroneState.h"
 #include "MockPositionSensor.h"
+#include "MockMovementDriver.h"
+#include "MockLidarSensor.h"
 #include "ConfigParser.h"
 #include "MapFileWriter.h"
 #include "ScoreCalculator.h"
-#include "MockMovementDriver.h"
 
 /*
     Constructor.
@@ -27,14 +29,12 @@ Simulator::Simulator(const std::string& inputOutputPath)
 /*
     Helper function for building file paths.
 
-    The assignment says the program can receive an optional folder path.
-    If no path is given, we use the current folder.
+    Example:
+    inputOutputPath = ".."
+    fileName = "map_input.txt"
 
-    This function makes the rest of the code cleaner, so instead of writing:
-        inputOutputPath + "/" + "map_input.txt"
-
-    every time, we simply write:
-        makePath("map_input.txt")
+    Result:
+    "../map_input.txt"
 */
 std::string Simulator::makePath(const std::string& fileName) const {
     if (inputOutputPath.empty() || inputOutputPath == ".") {
@@ -52,35 +52,23 @@ std::string Simulator::makePath(const std::string& fileName) const {
     Runs the full simulator flow.
 
     Current version:
-    This is still not the final autonomous mapping algorithm.
+    - Loads input files.
+    - Creates hidden real world map.
+    - Creates drone discovered map.
+    - Creates mock position sensor.
+    - Creates mock movement driver.
+    - Creates mock lidar sensor.
+    - Runs a temporary movement + lidar test.
+    - Stores lidar hit into the drone map.
+    - Writes map_output.txt.
+    - Calculates score.
 
-    For now, it:
-    1. Loads the input files.
-    2. Creates the real hidden map.
-    3. Creates the drone's discovered map.
-    4. Creates a mock position sensor.
-    5. Marks the starting position as free.
-    6. Writes map_output.txt.
-    7. Calculates the mapping score.
-
-    Later, we will replace the temporary marking step with a real loop:
-        while mapping is not complete:
-            ask drone for command
-            execute command using mocks
-            update drone map
+    Later, the temporary test will be replaced by the real autonomous mapping loop.
 */
 int Simulator::run() {
     /*
         Step 1:
-        Build paths to all required files.
-
-        Input files:
-        - drone_config.txt
-        - mission_config.txt
-        - map_input.txt
-
-        Output file:
-        - map_output.txt
+        Build paths to all required input/output files.
     */
     std::string droneConfigPath = makePath("drone_config.txt");
     std::string missionConfigPath = makePath("mission_config.txt");
@@ -89,29 +77,12 @@ int Simulator::run() {
 
     /*
         Step 2:
-        Parse the configuration files.
-
-        droneConfig:
-        Contains drone capabilities, such as max advance distance.
-
-        missionConfig:
-        Contains mission-specific information, such as start position.
-
-        worldMap:
-        This is the real hidden map of the building.
-        The drone itself should NOT directly use this map.
-        Only the simulator and mock sensors may use it.
+        Parse input files.
     */
     DroneConfig droneConfig = ConfigParser::parseDroneConfig(droneConfigPath);
     MissionConfig missionConfig = ConfigParser::parseMissionConfig(missionConfigPath);
     GroundTruthMap worldMap = ConfigParser::parseMapInput(mapInputPath);
 
-    /*
-        Debug prints.
-
-        These are useful while we are still building the project.
-        Later, we can decide whether to keep them or replace them with logging.
-    */
     std::cout << "Drone max advance: "
               << droneConfig.maxAdvanceCm
               << " cm"
@@ -125,12 +96,10 @@ int Simulator::run() {
 
     /*
         Step 3:
-        Create the drone's internal map.
+        Create the drone's internal discovered map.
 
-        worldMap is the real hidden map.
-        droneMap is what the drone has discovered so far.
-
-        At the beginning, the droneMap should mostly contain Unmapped cells.
+        worldMap = hidden real map.
+        droneMap = what the drone discovered so far.
     */
     SparseBuildingMap droneMap(
         worldMap.getSizeX(),
@@ -140,17 +109,7 @@ int Simulator::run() {
 
     /*
         Step 4:
-        Create the real drone state inside the simulator.
-
-        DroneState stores the actual current pose of the drone:
-        - position: x, y, height
-        - xyAngle: direction in the XY plane
-
-        The assignment uses:
-        0   = east
-        90  = south
-        180 = west
-        270 = north
+        Create real drone state inside the simulator.
     */
     DroneState droneState;
     droneState.pose.position = missionConfig.startPosition;
@@ -158,21 +117,19 @@ int Simulator::run() {
 
     /*
         Step 5:
-        Create the mock position sensor.
+        Create mocks.
 
-        The drone will eventually receive an IPositionSensor interface.
-        But in our simulator, we use MockPositionSensor.
-
-        The sensor reads from droneState and returns the current pose.
+        Position sensor reads the current DroneState.
+        Movement driver updates DroneState.
+        Lidar sensor reads DroneState through the position sensor
+        and scans the hidden GroundTruthMap.
     */
     MockPositionSensor positionSensor(droneState);
-
     MockMovementDriver movementDriver(droneState, droneConfig, worldMap);
+    MockLidarSensor lidarSensor(droneConfig, worldMap, positionSensor);
 
     /*
-        Test the position sensor.
-
-        This confirms that the sensor correctly reads the initial drone position.
+        Print initial pose.
     */
     Pose sensedPose = positionSensor.getPose();
 
@@ -185,33 +142,194 @@ int Simulator::run() {
               << " degrees"
               << std::endl;
 
-    // Mark the starting position as free
+    /*
+        Temporary mapping test.
+
+        Mark the start position as free because the drone starts there.
+    */
     droneMap.setCell(missionConfig.startPosition, CellState::Free);
 
-    // Temporary movement test
-    bool moved = movementDriver.advance(1);
+    /*
+        Temporary movement test 1:
+        Move from (0,0,0) to (1,0,0), assuming the drone starts facing east.
+    */
+    bool movedFirst = movementDriver.advance(1);
 
-    if (moved) {
-        Pose afterMovePose = positionSensor.getPose();
+    if (movedFirst) {
+        Pose afterFirstMovePose = positionSensor.getPose();
 
-        std::cout << "After advance, drone is at: "
-                << afterMovePose.position.x << ", "
-                << afterMovePose.position.y << ", "
-                << afterMovePose.position.height
-                << " angle "
-                << afterMovePose.xyAngle
-                << " degrees"
-                << std::endl;
+        std::cout << "After first advance, drone is at: "
+                  << afterFirstMovePose.position.x << ", "
+                  << afterFirstMovePose.position.y << ", "
+                  << afterFirstMovePose.position.height
+                  << " angle "
+                  << afterFirstMovePose.xyAngle
+                  << " degrees"
+                  << std::endl;
 
-        droneMap.setCell(afterMovePose.position, CellState::Free);
+        droneMap.setCell(afterFirstMovePose.position, CellState::Free);
     }
 
+    /*
+        Temporary movement test 2:
+        Move one more step east.
+
+        If start was (0,0,0), now the drone should be at (2,0,0).
+    */
+    bool movedSecond = movementDriver.advance(1);
+
+    if (movedSecond) {
+        Pose afterSecondMovePose = positionSensor.getPose();
+
+        std::cout << "After second advance, drone is at: "
+                  << afterSecondMovePose.position.x << ", "
+                  << afterSecondMovePose.position.y << ", "
+                  << afterSecondMovePose.position.height
+                  << " angle "
+                  << afterSecondMovePose.xyAngle
+                  << " degrees"
+                  << std::endl;
+
+        droneMap.setCell(afterSecondMovePose.position, CellState::Free);
+    }
+
+    /*
+        Temporary rotation test:
+        Turn right by 90 degrees.
+
+        According to the assignment convention:
+        0   = east
+        90  = south
+        180 = west
+        270 = north
+
+        So after this rotation, the drone should face south.
+    */
+    bool rotated = movementDriver.rotate(RotationDirection::Right, 90);
+
+    if (rotated) {
+        Pose afterRotatePose = positionSensor.getPose();
+
+        std::cout << "After rotate, drone is at: "
+                  << afterRotatePose.position.x << ", "
+                  << afterRotatePose.position.y << ", "
+                  << afterRotatePose.position.height
+                  << " angle "
+                  << afterRotatePose.xyAngle
+                  << " degrees"
+                  << std::endl;
+    }
+
+    /*
+        Temporary LiDAR test.
+
+        ScanAngle(0, 0) means:
+        - xyAngle = 0: scan straight ahead relative to the drone direction.
+        - heightAngle = 0: scan at the same height.
+
+        If there is an occupied cell directly south of the drone,
+        the LiDAR should return one hit.
+    */
+    Pose beforeLidarPose = positionSensor.getPose();
+
+    std::cout << "Before lidar test, drone is at: "
+              << beforeLidarPose.position.x << ", "
+              << beforeLidarPose.position.y << ", "
+              << beforeLidarPose.position.height
+              << " angle "
+              << beforeLidarPose.xyAngle
+              << " degrees"
+              << std::endl;
+
+    ScanResult scanResult = lidarSensor.scan(ScanAngle(0, 0));
+
+    std::cout << "Lidar scan returned "
+              << scanResult.size()
+              << " hits"
+              << std::endl;
+
+    /*
+        Convert every LiDAR hit into a map cell and store it
+        in the drone's discovered map.
+    */
+    for (const ScanHit& hit : scanResult) {
+        std::cout << "Hit at relative xy angle "
+                  << hit.angle.xyAngle
+                  << ", height angle "
+                  << hit.angle.heightAngle
+                  << ", distance "
+                  << hit.distance
+                  << " cm"
+                  << std::endl;
+
+        /*
+            If distance is 0, it means the object is too close
+            to measure accurately. For now, we do not convert
+            this into a position.
+        */
+        if (hit.distance <= 0) {
+            std::cout << "Hit is too close to map accurately"
+                      << std::endl;
+            continue;
+        }
+
+        /*
+            The hit angle is relative to the drone direction,
+            so we convert it to an absolute world angle.
+
+            Example:
+            drone xyAngle = 90
+            hit relative xyAngle = 0
+
+            absolute angle = 90, meaning south.
+        */
+        Pose currentPose = positionSensor.getPose();
+
+        Degree absoluteXyAngle =
+            (currentPose.xyAngle + hit.angle.xyAngle) % 360;
+
+        if (absoluteXyAngle < 0) {
+            absoluteXyAngle += 360;
+        }
+
+        const double pi = 3.14159265358979323846;
+
+        double xyRadians =
+            static_cast<double>(absoluteXyAngle) * pi / 180.0;
+
+        double heightRadians =
+            static_cast<double>(hit.angle.heightAngle) * pi / 180.0;
+
+        double horizontalFactor = std::cos(heightRadians);
+
+        double dx = horizontalFactor * std::cos(xyRadians);
+        double dy = horizontalFactor * std::sin(xyRadians);
+        double dh = std::sin(heightRadians);
+
+        Position hitPosition{
+            static_cast<Cm>(
+                std::round(currentPose.position.x + dx * hit.distance)
+            ),
+            static_cast<Cm>(
+                std::round(currentPose.position.y + dy * hit.distance)
+            ),
+            static_cast<Cm>(
+                std::round(currentPose.position.height + dh * hit.distance)
+            )
+        };
+
+        droneMap.setCell(hitPosition, CellState::Occupied);
+
+        std::cout << "Marked LiDAR hit as occupied at: "
+                  << hitPosition.x << ", "
+                  << hitPosition.y << ", "
+                  << hitPosition.height
+                  << std::endl;
+    }
 
     /*
         Step 6:
         Write the drone's discovered map into map_output.txt.
-
-        This file should use the same format as map_input.txt.
     */
     bool wroteMap = MapFileWriter::writeSparseMap(mapOutputPath, droneMap);
 
@@ -226,13 +344,7 @@ int Simulator::run() {
 
     /*
         Step 7:
-        Calculate the mapping score.
-
-        We compare:
-        - worldMap: the real hidden map
-        - droneMap: the map discovered by the drone
-
-        The score is between 0 and 100.
+        Calculate mapping score.
     */
     double score = ScoreCalculator::calculateScore(worldMap, droneMap);
 
@@ -241,8 +353,5 @@ int Simulator::run() {
               << "/100"
               << std::endl;
 
-    /*
-        Simulation finished successfully.
-    */
     return 0;
 }

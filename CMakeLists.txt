@@ -14,6 +14,7 @@ add_executable(my_exe
     src/ScoreCalculator.cpp
     src/simulator.cpp
     src/MockMovementDriver.cpp
+    src/MockLidarSensor.cpp
 )
 
 
