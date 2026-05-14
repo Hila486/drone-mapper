@@ -8,11 +8,7 @@ SparseBuildingMap::SparseBuildingMap(int sizeX, int sizeY, int sizeZ)
     : sizeX(sizeX),
       sizeY(sizeY),
       sizeZ(sizeZ),
-<<<<<<< HEAD
-      cells(sizeX * sizeY * sizeZ, CellState::Unknown){
-=======
       cells(sizeX * sizeY * sizeZ, CellState::Unknown) { 
->>>>>>> 43994b0 (Shalev)
 }
 
 // Checks whether a given position is inside the map boundaries.
@@ -24,13 +20,8 @@ bool SparseBuildingMap::isInside(const Position& pos) const {
 
 // Converts a 3D position (x, y, z) into a 1D vector index.
 // The cells are stored in one long vector instead of a real 3D array.
-<<<<<<< HEAD
-int SparseBuildingMap::index(const Position& pos) const {
-    return pos.height * sizeX * sizeY + pos.y * sizeX + pos.x;
-=======
 int SparseBuildingMap::index(const Position& pos) const { // 1 to 1 mapping
     return pos.height * sizeX * sizeY + pos.y * sizeX + pos.x; // pos is (height,y,x)
->>>>>>> 43994b0 (Shalev)
 }
 
 // Returns the cell state at the given position.
@@ -53,7 +44,6 @@ void SparseBuildingMap::setCell(const Position& pos, CellState state) {
 
     cells[index(pos)] = state;
 }
-<<<<<<< HEAD
 // Getters for map dimensions.
 int SparseBuildingMap::getSizeX() const {
     return sizeX;
@@ -66,5 +56,3 @@ int SparseBuildingMap::getSizeY() const {
 int SparseBuildingMap::getSizeZ() const {
     return sizeZ;
 }
-=======
->>>>>>> 43994b0 (Shalev)
