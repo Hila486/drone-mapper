@@ -9,6 +9,9 @@ add_executable(my_exe
     src/GroundTruthMap.cpp
     src/SparseBuildingMap.cpp
     src/MockPositionSensor.cpp
+    src/ConfigParser.cpp
+    src/MapFileWriter.cpp
+    src/ScoreCalculator.cpp
 )
 
 

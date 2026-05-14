@@ -14,6 +14,10 @@ public:
 
     bool isInside(const Position& pos) const;
 
+    int getSizeX() const;
+    int getSizeY() const;
+    int getSizeZ() const;
+
 private:
     int sizeX;
     int sizeY;

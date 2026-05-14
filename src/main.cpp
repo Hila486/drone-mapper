@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 
 #include "Types.h"
 #include "DroneConfig.h"
@@ -7,24 +8,52 @@
 #include "SparseBuildingMap.h"
 #include "DroneState.h"
 #include "MockPositionSensor.h"
+#include "ConfigParser.h"
+#include "MapFileWriter.h"
+#include "ScoreCalculator.h"
 
-int main() {
-    DroneConfig droneConfig;
-    droneConfig.maxAdvanceCm = 100;
-    droneConfig.maxElevateCm = 50;
-    droneConfig.maxRotateDeg = 90;
-    droneConfig.lidarRangeCm = 500;
+// Helper function for creating paths like:
+// basePath + "/" + fileName
+static std::string makePath(const std::string& basePath, const std::string& fileName) {
+    if (basePath.empty() || basePath == ".") {
+        return "./" + fileName;
+    }
 
-    MissionConfig missionConfig;
-    missionConfig.startPosition = Position{0, 0, 0};
-    missionConfig.startAngleDeg = 0;
-    missionConfig.minX = 0;
-    missionConfig.maxX = 10;
-    missionConfig.minY = 0;
-    missionConfig.maxY = 10;
-    missionConfig.minZ = 0;
-    missionConfig.maxZ = 3;
-    missionConfig.resolutionCm = 100;
+    if (basePath.back() == '/') {
+        return basePath + fileName;
+    }
+
+    return basePath + "/" + fileName;
+}
+
+int main(int argc, char* argv[]) {
+    /*
+        The assignment says the program can receive an optional input/output path.
+
+        Example:
+        ./my_exe ..
+
+        If no path is given, we use the current working directory.
+    */
+    std::string inputOutputPath = ".";
+
+    if (argc > 1) {
+        inputOutputPath = argv[1];
+    }
+
+    std::string droneConfigPath = makePath(inputOutputPath, "drone_config.txt");
+    std::string missionConfigPath = makePath(inputOutputPath, "mission_config.txt");
+    std::string mapInputPath = makePath(inputOutputPath, "map_input.txt");
+
+    // Read the input files.
+    DroneConfig droneConfig =
+        ConfigParser::parseDroneConfig(droneConfigPath);
+
+    MissionConfig missionConfig =
+        ConfigParser::parseMissionConfig(missionConfigPath);
+
+    GroundTruthMap worldMap =
+        ConfigParser::parseMapInput(mapInputPath);
 
     std::cout << "Drone max advance: "
               << droneConfig.maxAdvanceCm
@@ -34,24 +63,27 @@ int main() {
     std::cout << "Mission start position: "
               << missionConfig.startPosition.x << ", "
               << missionConfig.startPosition.y << ", "
-              << missionConfig.startPosition.z
+              << missionConfig.startPosition.height
               << std::endl;
 
-    // Create the real world map.
-    // This is the map that only the simulator and mock sensors should know.
-    GroundTruthMap worldMap(10, 10, 3);
-
+    // Small test: check the real world map.
+    // This map is hidden from the drone. Only simulator-side code and mocks use it.
     Position wallPosition{2, 3, 0};
-    worldMap.setCell(wallPosition, CellState::Occupied);
-
     CellState realState = worldMap.getCell(wallPosition);
 
     if (realState == CellState::Occupied) {
         std::cout << "GroundTruthMap: cell at "
                   << wallPosition.x << ", "
                   << wallPosition.y << ", "
-                  << wallPosition.z
+                  << wallPosition.height
                   << " is occupied"
+                  << std::endl;
+    } else {
+        std::cout << "GroundTruthMap: cell at "
+                  << wallPosition.x << ", "
+                  << wallPosition.y << ", "
+                  << wallPosition.height
+                  << " is not occupied"
                   << std::endl;
     }
 
@@ -63,14 +95,25 @@ int main() {
                   << std::endl;
     }
 
-    // Create the drone's discovered map.
-    // This is the map that starts unknown and will be updated by the drone.
-    SparseBuildingMap droneMap(10, 10, 3);
+    /*
+        Create the drone's discovered map.
+
+        This is NOT the real map.
+        It starts unknown, because at the beginning the drone has not mapped anything.
+
+        Important:
+        We create it with the same dimensions as worldMap.
+    */
+    SparseBuildingMap droneMap(
+        worldMap.getSizeX(),
+        worldMap.getSizeY(),
+        worldMap.getSizeZ()
+    );
 
     Position testPosition{2, 3, 0};
     CellState droneInitialState = droneMap.getCell(testPosition);
 
-    if (droneInitialState == CellState::Unmapped) {
+    if (droneInitialState == CellState::Unknown) {
         std::cout << "SparseBuildingMap: drone does not know this cell yet"
                   << std::endl;
     }
@@ -85,26 +128,49 @@ int main() {
                   << std::endl;
     }
 
-    // Create the real current state of the drone.
-    // This stores the drone's actual position and angle in the simulation.
+    /*
+        Create the real current state of the drone.
+
+        DroneState belongs to the simulator side.
+        The drone should not directly change it.
+        Later, MockMovementDriver will update this state.
+    */
     DroneState droneState;
     droneState.pose.position = missionConfig.startPosition;
-    droneState.pose.angleDegrees = missionConfig.startAngleDeg;
+    droneState.pose.xyAngle = missionConfig.startAngleDeg;
 
     // Create a mock position sensor.
-    // The sensor reads from DroneState, but it does not change it.
+    // It reads from DroneState but does not change it.
     MockPositionSensor positionSensor(droneState);
 
-    // Ask the position sensor for the current pose.
     Pose sensedPose = positionSensor.getPose();
 
     std::cout << "Position sensor says drone is at: "
               << sensedPose.position.x << ", "
               << sensedPose.position.y << ", "
-              << sensedPose.position.z
+              << sensedPose.position.height
               << " angle "
-              << sensedPose.angleDegrees
+              << sensedPose.xyAngle
               << " degrees"
+              << std::endl;
+
+    // Write the drone's discovered map into map_output.txt.
+    std::string mapOutputPath = makePath(inputOutputPath, "map_output.txt");
+
+    bool wroteMap = MapFileWriter::writeSparseMap(mapOutputPath, droneMap);
+
+    if (wroteMap) {
+        std::cout << "Wrote output map to: "
+                  << mapOutputPath
+                  << std::endl;
+    }
+
+    // Compare the drone's map with the real hidden world map.
+    double score = ScoreCalculator::calculateScore(worldMap, droneMap);
+
+    std::cout << "Mapping score: "
+              << score
+              << "/100"
               << std::endl;
 
     return 0;

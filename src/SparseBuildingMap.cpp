@@ -2,26 +2,26 @@
 
 // Constructor.
 // Creates a 3D map with sizeX * sizeY * sizeZ cells.
-// Unlike GroundTruthMap, this map starts with CellState::Unmapped,
+// Unlike GroundTruthMap, this map starts with CellState::Unknown,
 // because the drone does not know the world at the beginning.
 SparseBuildingMap::SparseBuildingMap(int sizeX, int sizeY, int sizeZ)
     : sizeX(sizeX),
       sizeY(sizeY),
       sizeZ(sizeZ),
-      cells(sizeX * sizeY * sizeZ, CellState::Unmapped) {
+      cells(sizeX * sizeY * sizeZ, CellState::Unknown){
 }
 
 // Checks whether a given position is inside the map boundaries.
 bool SparseBuildingMap::isInside(const Position& pos) const {
     return pos.x >= 0 && pos.x < sizeX &&
            pos.y >= 0 && pos.y < sizeY &&
-           pos.z >= 0 && pos.z < sizeZ;
+           pos.height >= 0 && pos.height < sizeZ;
 }
 
 // Converts a 3D position (x, y, z) into a 1D vector index.
 // The cells are stored in one long vector instead of a real 3D array.
 int SparseBuildingMap::index(const Position& pos) const {
-    return pos.z * sizeX * sizeY + pos.y * sizeX + pos.x;
+    return pos.height * sizeX * sizeY + pos.y * sizeX + pos.x;
 }
 
 // Returns the cell state at the given position.
@@ -42,4 +42,16 @@ void SparseBuildingMap::setCell(const Position& pos, CellState state) {
     }
 
     cells[index(pos)] = state;
+}
+// Getters for map dimensions.
+int SparseBuildingMap::getSizeX() const {
+    return sizeX;
+}
+
+int SparseBuildingMap::getSizeY() const {
+    return sizeY;
+}
+
+int SparseBuildingMap::getSizeZ() const {
+    return sizeZ;
 }
