@@ -46,8 +46,9 @@ Degree MockLidarSensor::normalizeAngle(Degree angle) const {
     The mock sensor internally converts it to an absolute angle using:
         absolute angle = drone current angle + requested relative scan angle
 
-    But the result we return still stores the relative angle, because the drone
-    should not know that the mock used the real world map internally.
+    First version:
+    - We still scan one central beam.
+    - Next improvement can add outer beam circles using FOVC and D.
 */
 ScanResult MockLidarSensor::scan(const ScanAngle& scanAngle) const {
     ScanResult result;
@@ -75,10 +76,15 @@ ScanResult MockLidarSensor::scan(const ScanAngle& scanAngle) const {
 /*
     Traces one beam through the map.
 
-    Current simple model:
+    Current model:
+    - one central beam
     - one sample every 1 cm
     - first occupied cell stops the beam
-    - outside map means the beam leaves the known world, so we stop scanning
+    - outside map means the beam leaves the known world, so scanning stops
+
+    Assignment behavior:
+    - If the hit is closer than Z-min, return distance 0.
+    - If no hit is found up to Z-max, return no hit.
 
     Angle convention:
     0   = east  => +x
@@ -99,11 +105,30 @@ bool MockLidarSensor::traceBeam(
     Pose currentPose = positionSensor.getPose();
     Position origin = currentPose.position;
 
-    Cm maxDistance = droneConfig.lidarRangeCm;
+    /*
+        Use the new assignment field first: lidarMaxRangeCm = Z-max.
+
+        If it was not parsed yet, fall back to our old field:
+        lidarRangeCm.
+
+        If both are missing, use a safe default for testing.
+    */
+    Cm maxDistance = droneConfig.lidarMaxRangeCm;
+
+    if (maxDistance <= 0) {
+        maxDistance = droneConfig.lidarRangeCm;
+    }
 
     if (maxDistance <= 0) {
         maxDistance = 100;
     }
+
+    /*
+        Z-min.
+
+        If lidarMinRangeCm is 0, then every detected distance is considered accurate.
+    */
+    Cm minAccurateDistance = droneConfig.lidarMinRangeCm;
 
     const double pi = 3.14159265358979323846;
 
@@ -147,7 +172,18 @@ bool MockLidarSensor::traceBeam(
         }
 
         if (cell == CellState::Occupied) {
-            hitDistance = distance;
+            /*
+                Assignment rule:
+                If the object is below Z-min, the lidar detects it,
+                but cannot accurately measure the distance.
+                Therefore return distance 0.
+            */
+            if (minAccurateDistance > 0 && distance < minAccurateDistance) {
+                hitDistance = 0;
+            } else {
+                hitDistance = distance;
+            }
+
             return true;
         }
     }

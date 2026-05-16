@@ -45,13 +45,19 @@ bool MockMovementDriver::canMoveTo(const Position& position) const {
     CellState cell = worldMap.getCell(position);
 
     if (cell == CellState::OutOfBounds) {
-        std::cout << "Movement blocked: target position is out of bounds"
+        std::cout << "Movement blocked: target position is out of bounds at "
+                  << position.x << ", "
+                  << position.y << ", "
+                  << position.height
                   << std::endl;
         return false;
     }
 
     if (cell == CellState::Occupied) {
-        std::cout << "Movement blocked: target position is occupied"
+        std::cout << "Movement blocked: target position is occupied at "
+                  << position.x << ", "
+                  << position.y << ", "
+                  << position.height
                   << std::endl;
         return false;
     }
@@ -97,13 +103,14 @@ bool MockMovementDriver::rotate(RotationDirection direction, Degree angle) {
 /*
     Advances the drone forward/backward.
 
-    For now, this implementation supports the four main directions:
-    0   = east
-    90  = south
-    180 = west
-    270 = north
+    Important improvement:
+    This version checks every intermediate cell, not only the final cell.
 
-    This is enough for our current grid-based simulator.
+    Example:
+    If the drone moves from x=0 to x=5, we check:
+    x=1, x=2, x=3, x=4, x=5
+
+    This prevents the drone from jumping through walls.
 */
 bool MockMovementDriver::advance(Cm distance) {
     if (std::abs(distance) > droneConfig.maxAdvanceCm) {
@@ -115,30 +122,44 @@ bool MockMovementDriver::advance(Cm distance) {
         return false;
     }
 
-    Position nextPosition = droneState.pose.position;
+    if (distance == 0) {
+        return true;
+    }
+
     Degree direction = normalizeAngle(droneState.pose.xyAngle);
 
-    if (direction == 0) {
-        nextPosition.x += distance;
-    } else if (direction == 90) {
-        nextPosition.y += distance;
-    } else if (direction == 180) {
-        nextPosition.x -= distance;
-    } else if (direction == 270) {
-        nextPosition.y -= distance;
-    } else {
-        std::cout << "Advance failed: unsupported angle "
-                  << direction
-                  << ". Current simple movement supports only 0, 90, 180, 270."
-                  << std::endl;
-        return false;
+    int step = (distance > 0) ? 1 : -1;
+    int stepsCount = std::abs(distance);
+
+    Position currentPosition = droneState.pose.position;
+
+    for (int i = 0; i < stepsCount; ++i) {
+        Position nextPosition = currentPosition;
+
+        if (direction == 0) {
+            nextPosition.x += step;
+        } else if (direction == 90) {
+            nextPosition.y += step;
+        } else if (direction == 180) {
+            nextPosition.x -= step;
+        } else if (direction == 270) {
+            nextPosition.y -= step;
+        } else {
+            std::cout << "Advance failed: unsupported angle "
+                      << direction
+                      << ". Current simple movement supports only 0, 90, 180, 270."
+                      << std::endl;
+            return false;
+        }
+
+        if (!canMoveTo(nextPosition)) {
+            return false;
+        }
+
+        currentPosition = nextPosition;
     }
 
-    if (!canMoveTo(nextPosition)) {
-        return false;
-    }
-
-    droneState.pose.position = nextPosition;
+    droneState.pose.position = currentPosition;
     return true;
 }
 
@@ -147,6 +168,10 @@ bool MockMovementDriver::advance(Cm distance) {
 
     Positive distance increases height.
     Negative distance decreases height.
+
+    Important improvement:
+    This version checks every intermediate height layer,
+    not only the final height.
 */
 bool MockMovementDriver::elevate(Cm distance) {
     if (std::abs(distance) > droneConfig.maxElevateCm) {
@@ -158,13 +183,26 @@ bool MockMovementDriver::elevate(Cm distance) {
         return false;
     }
 
-    Position nextPosition = droneState.pose.position;
-    nextPosition.height += distance;
-
-    if (!canMoveTo(nextPosition)) {
-        return false;
+    if (distance == 0) {
+        return true;
     }
 
-    droneState.pose.position = nextPosition;
+    int step = (distance > 0) ? 1 : -1;
+    int stepsCount = std::abs(distance);
+
+    Position currentPosition = droneState.pose.position;
+
+    for (int i = 0; i < stepsCount; ++i) {
+        Position nextPosition = currentPosition;
+        nextPosition.height += step;
+
+        if (!canMoveTo(nextPosition)) {
+            return false;
+        }
+
+        currentPosition = nextPosition;
+    }
+
+    droneState.pose.position = currentPosition;
     return true;
 }

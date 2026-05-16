@@ -1,31 +1,43 @@
 #include "SparseBuildingMap.h"
 
-// Constructor.
-// Creates a 3D map with sizeX * sizeY * sizeZ cells.
-// Unlike GroundTruthMap, this map starts with CellState::Unknown,
-// because the drone does not know the world at the beginning.
-SparseBuildingMap::SparseBuildingMap(int sizeX, int sizeY, int sizeZ) 
+/*
+    Constructor.
+
+    Creates a 3D map with sizeX * sizeY * sizeZ cells.
+    The drone's map starts as Unknown, because the drone does not know
+    the world at the beginning.
+*/
+SparseBuildingMap::SparseBuildingMap(int sizeX, int sizeY, int sizeZ)
     : sizeX(sizeX),
       sizeY(sizeY),
       sizeZ(sizeZ),
-      cells(sizeX * sizeY * sizeZ, CellState::Unknown) { 
+      cells(sizeX * sizeY * sizeZ, CellState::Unknown) {
 }
 
-// Checks whether a given position is inside the map boundaries.
+/*
+    Checks whether a given position is inside the map boundaries.
+*/
 bool SparseBuildingMap::isInside(const Position& pos) const {
     return pos.x >= 0 && pos.x < sizeX &&
            pos.y >= 0 && pos.y < sizeY &&
            pos.height >= 0 && pos.height < sizeZ;
 }
 
-// Converts a 3D position (x, y, z) into a 1D vector index.
-// The cells are stored in one long vector instead of a real 3D array.
-int SparseBuildingMap::index(const Position& pos) const { // 1 to 1 mapping
-    return pos.height * sizeX * sizeY + pos.y * sizeX + pos.x; // pos is (height,y,x)
+/*
+    Converts a 3D position into a 1D vector index.
+
+    Order:
+    height layer -> y row -> x column
+*/
+int SparseBuildingMap::index(const Position& pos) const {
+    return pos.height * sizeX * sizeY + pos.y * sizeX + pos.x;
 }
 
-// Returns the cell state at the given position.
-// If the position is outside the map, returns OutOfBounds.
+/*
+    Returns the cell state at the given position.
+
+    If the position is outside the map, returns OutOfBounds.
+*/
 CellState SparseBuildingMap::getCell(const Position& pos) const {
     if (!isInside(pos)) {
         return CellState::OutOfBounds;
@@ -34,9 +46,11 @@ CellState SparseBuildingMap::getCell(const Position& pos) const {
     return cells[index(pos)];
 }
 
+/*
+    Updates the cell state at the given position.
 
-// Updates the cell state at the given position.
-// If the position is outside the map, the function does nothing.
+    If the position is outside the map, the function does nothing.
+*/
 void SparseBuildingMap::setCell(const Position& pos, CellState state) {
     if (!isInside(pos)) {
         return;
@@ -44,7 +58,10 @@ void SparseBuildingMap::setCell(const Position& pos, CellState state) {
 
     cells[index(pos)] = state;
 }
-// Getters for map dimensions.
+
+/*
+    Getters for map dimensions.
+*/
 int SparseBuildingMap::getSizeX() const {
     return sizeX;
 }

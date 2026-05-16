@@ -52,20 +52,29 @@ std::string Simulator::makePath(const std::string& fileName) const {
     Runs the full simulator flow.
 
     Current version:
+    - Clears previous input error records.
     - Loads input files.
+    - Writes input_errors.txt only if recoverable input errors exist.
     - Creates hidden real world map.
     - Creates drone discovered map.
     - Creates mock position sensor.
     - Creates mock movement driver.
     - Creates mock lidar sensor.
     - Runs a temporary movement + lidar test.
-    - Stores lidar hit into the drone map.
+    - Stores lidar hit into the drone map when distance is accurate.
+    - Tests collision blocking in MockMovementDriver.
     - Writes map_output.txt.
     - Calculates score.
 
     Later, the temporary test will be replaced by the real autonomous mapping loop.
 */
 int Simulator::run() {
+    /*
+        Step 0:
+        Clear old recoverable input errors before parsing this run.
+    */
+    ConfigParser::clearInputErrors();
+
     /*
         Step 1:
         Build paths to all required input/output files.
@@ -74,14 +83,20 @@ int Simulator::run() {
     std::string missionConfigPath = makePath("mission_config.txt");
     std::string mapInputPath = makePath("map_input.txt");
     std::string mapOutputPath = makePath("map_output.txt");
+    std::string inputErrorsPath = makePath("input_errors.txt");
 
     /*
         Step 2:
         Parse input files.
+
+        If recoverable input errors are found, ConfigParser stores them.
+        After parsing, we write them into input_errors.txt.
     */
     DroneConfig droneConfig = ConfigParser::parseDroneConfig(droneConfigPath);
     MissionConfig missionConfig = ConfigParser::parseMissionConfig(missionConfigPath);
     GroundTruthMap worldMap = ConfigParser::parseMapInput(mapInputPath);
+
+    ConfigParser::writeInputErrors(inputErrorsPath);
 
     std::cout << "Drone max advance: "
               << droneConfig.maxAdvanceCm
@@ -251,6 +266,10 @@ int Simulator::run() {
     /*
         Convert every LiDAR hit into a map cell and store it
         in the drone's discovered map.
+
+        If hit.distance == 0, it means the object is below Z-min.
+        The LiDAR knows there is something close, but cannot accurately
+        measure where it is, so we do not mark a specific occupied cell.
     */
     for (const ScanHit& hit : scanResult) {
         std::cout << "Hit at relative xy angle "
@@ -262,11 +281,6 @@ int Simulator::run() {
                   << " cm"
                   << std::endl;
 
-        /*
-            If distance is 0, it means the object is too close
-            to measure accurately. For now, we do not convert
-            this into a position.
-        */
         if (hit.distance <= 0) {
             std::cout << "Hit is too close to map accurately"
                       << std::endl;
@@ -326,6 +340,38 @@ int Simulator::run() {
                   << hitPosition.height
                   << std::endl;
     }
+
+    /*
+        Temporary collision test for MockMovementDriver.
+
+        The drone is currently at (2,0,0), facing south.
+        There is an occupied cell at (2,3,0).
+
+        If advance(5) checks every intermediate cell correctly,
+        it should fail before entering the occupied cell.
+    */
+    std::cout << "Testing blocked movement through wall..." << std::endl;
+
+    bool movedThroughWall = movementDriver.advance(5);
+
+    if (!movedThroughWall) {
+        std::cout << "Correct: movement was blocked before collision"
+                  << std::endl;
+    } else {
+        std::cout << "Warning: movement succeeded, but it should have been blocked"
+                  << std::endl;
+    }
+
+    Pose afterBlockedMovePose = positionSensor.getPose();
+
+    std::cout << "After blocked movement test, drone is at: "
+              << afterBlockedMovePose.position.x << ", "
+              << afterBlockedMovePose.position.y << ", "
+              << afterBlockedMovePose.position.height
+              << " angle "
+              << afterBlockedMovePose.xyAngle
+              << " degrees"
+              << std::endl;
 
     /*
         Step 6:

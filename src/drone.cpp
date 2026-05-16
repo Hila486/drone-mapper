@@ -75,7 +75,7 @@ void Drone::handleScan() {
        Adjust this call to your real ILidarSensor API.
        According to your design doc, lidar scan may take orientation.
     */
-    ScanResult scan = lidar.scan(pose.orientation);
+    ScanResult scan = lidar.scan(ScanAngle(0, 0));
 
     updateMapFromScan(pose, scan);
 }
@@ -86,7 +86,7 @@ void Drone::handleLocationUpdate() {
 
 void Drone::markCurrentCellFree() {
     Pose pose = positionSensor.getPose();
-    buildingMap.set(pose.position, CellState::Free);
+    buildingMap.setCell(pose.position, CellState::Free);
 }
 
 void Drone::updateMapFromScan(const Pose& pose, const ScanResult& scan) {
@@ -132,22 +132,22 @@ std::vector<Position> Drone::candidateNeighbors(const Position& p) const {
       Deterministic order.
       Change z/height field name if your Position uses height instead of z.
     */
-    neighbors.push_back(Position{p.x + 1, p.y, p.z});
-    neighbors.push_back(Position{p.x, p.y + 1, p.z});
-    neighbors.push_back(Position{p.x - 1, p.y, p.z});
-    neighbors.push_back(Position{p.x, p.y - 1, p.z});
-    neighbors.push_back(Position{p.x, p.y, p.z + 1});
-    neighbors.push_back(Position{p.x, p.y, p.z - 1});
+    neighbors.push_back(Position{p.x + 1, p.y, p.height});
+    neighbors.push_back(Position{p.x, p.y + 1, p.height});
+    neighbors.push_back(Position{p.x - 1, p.y, p.height});
+    neighbors.push_back(Position{p.x, p.y - 1, p.height});
+    neighbors.push_back(Position{p.x, p.y, p.height + 1});
+    neighbors.push_back(Position{p.x, p.y, p.height - 1});
 
     return neighbors;
 }
 
 bool Drone::isKnownFree(const Position& p) const {
-    return buildingMap.get(p) == CellState::Free;
+    return buildingMap.getCell(p) == CellState::Free;
 }
 
 bool Drone::isKnownUnmapped(const Position& p) const {
-    return buildingMap.get(p) == CellState::Unmapped;
+    return buildingMap.getCell(p) == CellState::Unknown;
 }
 
 bool Drone::inMissionBounds(const Position& p) const {
@@ -159,8 +159,8 @@ bool Drone::inMissionBounds(const Position& p) const {
            p.x <= missionConfig.maxX &&
            p.y >= missionConfig.minY &&
            p.y <= missionConfig.maxY &&
-           p.z >= missionConfig.minHeight &&
-           p.z <= missionConfig.maxHeight;
+           p.height >= missionConfig.minZ &&
+           p.height <= missionConfig.maxZ;
 }
 
 bool Drone::tryAdvanceToNeighbor() {
@@ -188,7 +188,7 @@ bool Drone::tryAdvanceToNeighbor() {
               4. advance if horizontal neighbor is ahead
             */
 
-            return movementDriver.advance(/* one step distance */);
+            return movementDriver.advance(1);
         }
     }
 

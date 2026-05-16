@@ -15,6 +15,7 @@ add_executable(my_exe
     src/simulator.cpp
     src/MockMovementDriver.cpp
     src/MockLidarSensor.cpp
+    src/drone.cpp
 )
 
 

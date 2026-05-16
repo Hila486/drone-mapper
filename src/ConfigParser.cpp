@@ -1,7 +1,103 @@
 #include "ConfigParser.h"
 
+#include <cstdio>
 #include <fstream>
 #include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
+
+
+namespace {
+    std::vector<std::string> inputErrors;
+
+    void addInputError(const std::string& message) {
+        inputErrors.push_back(message);
+    }
+
+    bool parseIntToken(
+        const std::string& token,
+        int& value,
+        const std::string& fieldName,
+        const std::string& filePath
+    ) {
+        try {
+            size_t usedChars = 0;
+            int parsedValue = std::stoi(token, &usedChars);
+
+            if (usedChars != token.size()) {
+                addInputError(
+                    filePath + ": bad value for " + fieldName +
+                    " = '" + token + "'. Ignoring this token."
+                );
+                return false;
+            }
+
+            value = parsedValue;
+            return true;
+        } catch (...) {
+            addInputError(
+                filePath + ": bad value for " + fieldName +
+                " = '" + token + "'. Ignoring this token."
+            );
+            return false;
+        }
+    }
+
+    int getValueOrDefault(
+        const std::vector<int>& values,
+        size_t index,
+        int defaultValue,
+        const std::string& fieldName,
+        const std::string& filePath
+    ) {
+        if (index < values.size()) {
+            return values[index];
+        }
+
+        addInputError(
+            filePath + ": missing " + fieldName +
+            ". Using default value " + std::to_string(defaultValue) + "."
+        );
+
+        return defaultValue;
+    }
+
+    void validatePositive(
+        int& value,
+        int defaultValue,
+        const std::string& fieldName,
+        const std::string& filePath
+    ) {
+        if (value <= 0) {
+            addInputError(
+                filePath + ": " + fieldName +
+                " must be positive. Got " + std::to_string(value) +
+                ". Using default value " + std::to_string(defaultValue) + "."
+            );
+
+            value = defaultValue;
+        }
+    }
+
+    void validateNonNegative(
+        int& value,
+        int defaultValue,
+        const std::string& fieldName,
+        const std::string& filePath
+    ) {
+        if (value < 0) {
+            addInputError(
+                filePath + ": " + fieldName +
+                " cannot be negative. Got " + std::to_string(value) +
+                ". Using default value " + std::to_string(defaultValue) + "."
+            );
+
+            value = defaultValue;
+        }
+    }
+}
+
 
 /*
     ConfigParser.cpp
@@ -14,66 +110,135 @@
     3. map_input.txt      -> creates GroundTruthMap
 */
 
-
 DroneConfig ConfigParser::parseDroneConfig(const std::string& filePath) {
     /*
-        Reads drone_config.txt.
-
-        Expected simple format:
+        Expected drone_config.txt format:
 
         maxAdvanceCm
         maxElevateCm
         maxRotateDeg
-        lidarRangeCm
-
-        Example:
-
-        100
-        50
-        90
-        500
-
-        Meaning:
-        - The drone can advance at most 100 cm per command.
-        - The drone can elevate at most 50 cm per command.
-        - The drone can rotate at most 90 degrees per command.
-        - The lidar can scan up to 500 cm.
+        lidarMinRangeCm
+        lidarMaxRangeCm
+        lidarBeamSpacingCm
+        lidarFovCircleCount
+        minPassWidthCm
+        minPassHeightCm
     */
 
     DroneConfig config;
 
     std::ifstream file(filePath);
 
-    // If the file does not exist or cannot be opened,
-    // we use reasonable default values so the program can still run.
     if (!file.is_open()) {
-        std::cout << "Could not open drone config file: " << filePath
-                  << ". Using default drone config."
-                  << std::endl;
+        addInputError(
+            filePath +
+            ": could not open file. Using default drone configuration."
+        );
 
         config.maxAdvanceCm = 100;
         config.maxElevateCm = 50;
         config.maxRotateDeg = 90;
-        config.lidarRangeCm = 500;
+
+        config.lidarMinRangeCm = 0;
+        config.lidarMaxRangeCm = 500;
+        config.lidarBeamSpacingCm = 1;
+        config.lidarFovCircleCount = 1;
+
+        config.lidarRangeCm = config.lidarMaxRangeCm;
+        config.lidarResolutionCm = config.lidarBeamSpacingCm;
+
+        config.minPassWidthCm = 1;
+        config.minPassHeightCm = 1;
 
         return config;
     }
 
-    // Read values in the exact order described above.
-    file >> config.maxAdvanceCm;
-    file >> config.maxElevateCm;
-    file >> config.maxRotateDeg;
-    file >> config.lidarRangeCm;
+    auto readField = [&](const std::string& fieldName, int defaultValue) {
+        std::string token;
+
+        if (!(file >> token)) {
+            addInputError(
+                filePath + ": missing " + fieldName +
+                ". Using default value " + std::to_string(defaultValue) + "."
+            );
+            return defaultValue;
+        }
+
+        int value = defaultValue;
+
+        if (!parseIntToken(token, value, fieldName, filePath)) {
+            addInputError(
+                filePath + ": using default value " +
+                std::to_string(defaultValue) +
+                " for " + fieldName + "."
+            );
+            return defaultValue;
+        }
+
+        return value;
+    };
+
+    config.maxAdvanceCm =
+        readField("maxAdvanceCm", 100);
+
+    config.maxElevateCm =
+        readField("maxElevateCm", 50);
+
+    config.maxRotateDeg =
+        readField("maxRotateDeg", 90);
+
+    config.lidarMinRangeCm =
+        readField("lidarMinRangeCm", 0);
+
+    config.lidarMaxRangeCm =
+        readField("lidarMaxRangeCm", 500);
+
+    config.lidarBeamSpacingCm =
+        readField("lidarBeamSpacingCm", 1);
+
+    config.lidarFovCircleCount =
+        readField("lidarFovCircleCount", 1);
+
+    config.minPassWidthCm =
+        readField("minPassWidthCm", 1);
+
+    config.minPassHeightCm =
+        readField("minPassHeightCm", 1);
+
+    validatePositive(config.maxAdvanceCm, 100, "maxAdvanceCm", filePath);
+    validatePositive(config.maxElevateCm, 50, "maxElevateCm", filePath);
+    validatePositive(config.maxRotateDeg, 90, "maxRotateDeg", filePath);
+
+    validateNonNegative(config.lidarMinRangeCm, 0, "lidarMinRangeCm", filePath);
+    validatePositive(config.lidarMaxRangeCm, 500, "lidarMaxRangeCm", filePath);
+    validatePositive(config.lidarBeamSpacingCm, 1, "lidarBeamSpacingCm", filePath);
+    validatePositive(config.lidarFovCircleCount, 1, "lidarFovCircleCount", filePath);
+
+    validatePositive(config.minPassWidthCm, 1, "minPassWidthCm", filePath);
+    validatePositive(config.minPassHeightCm, 1, "minPassHeightCm", filePath);
+
+    if (config.lidarMinRangeCm > config.lidarMaxRangeCm) {
+        addInputError(
+            filePath +
+            ": lidarMinRangeCm is larger than lidarMaxRangeCm. "
+            "Using lidarMinRangeCm = 0."
+        );
+
+        config.lidarMinRangeCm = 0;
+    }
+
+    /*
+        Keep old fields synchronized for older code.
+    */
+    config.lidarRangeCm = config.lidarMaxRangeCm;
+    config.lidarResolutionCm = config.lidarBeamSpacingCm;
 
     return config;
 }
 
-
 MissionConfig ConfigParser::parseMissionConfig(const std::string& filePath) {
     /*
-        Reads mission_config.txt.
-
-        Expected simple format:
+        Expected mission_config.txt format:
 
         startX startY startHeight
         startAngleDeg
@@ -90,27 +255,17 @@ MissionConfig ConfigParser::parseMissionConfig(const std::string& filePath) {
         0 10
         0 3
         100
-
-        Meaning:
-        - Start position is (0, 0, 0)
-        - Start angle is 0 degrees
-        - Mapping boundaries:
-            X from 0 to 10
-            Y from 0 to 10
-            Height from 0 to 3
-        - Resolution is 100 cm
     */
 
     MissionConfig config;
 
     std::ifstream file(filePath);
 
-    // If the mission config file is missing,
-    // use a small default mission so the simulator can still run.
     if (!file.is_open()) {
-        std::cout << "Could not open mission config file: " << filePath
-                  << ". Using default mission config."
-                  << std::endl;
+        addInputError(
+            filePath +
+            ": could not open file. Using default mission configuration."
+        );
 
         config.startPosition = Position{0, 0, 0};
         config.startAngleDeg = 0;
@@ -129,27 +284,150 @@ MissionConfig ConfigParser::parseMissionConfig(const std::string& filePath) {
         return config;
     }
 
-    // Read start position.
-    // Notice: we use .height, not .z, because our Position struct uses height.
-    file >> config.startPosition.x;
-    file >> config.startPosition.y;
-    file >> config.startPosition.height;
+    auto readField = [&](const std::string& fieldName, int defaultValue) {
+        std::string token;
 
-    // Read start direction angle.
-    file >> config.startAngleDeg;
+        if (!(file >> token)) {
+            addInputError(
+                filePath + ": missing " + fieldName +
+                ". Using default value " + std::to_string(defaultValue) + "."
+            );
+            return defaultValue;
+        }
 
-    // Read mapping boundaries.
-    file >> config.minX;
-    file >> config.maxX;
+        int value = defaultValue;
 
-    file >> config.minY;
-    file >> config.maxY;
+        if (!parseIntToken(token, value, fieldName, filePath)) {
+            addInputError(
+                filePath + ": using default value " +
+                std::to_string(defaultValue) +
+                " for " + fieldName + "."
+            );
+            return defaultValue;
+        }
 
-    file >> config.minZ;
-    file >> config.maxZ;
+        return value;
+    };
 
-    // Read required map resolution.
-    file >> config.resolutionCm;
+    config.startPosition.x =
+        readField("startX", 0);
+
+    config.startPosition.y =
+        readField("startY", 0);
+
+    config.startPosition.height =
+        readField("startHeight", 0);
+
+    config.startAngleDeg =
+        readField("startAngleDeg", 0);
+
+    config.minX =
+        readField("minX", 0);
+
+    config.maxX =
+        readField("maxX", 10);
+
+    config.minY =
+        readField("minY", 0);
+
+    config.maxY =
+        readField("maxY", 10);
+
+    config.minZ =
+        readField("minZ", 0);
+
+    config.maxZ =
+        readField("maxZ", 3);
+
+    config.resolutionCm =
+        readField("resolutionCm", 100);
+
+    /*
+        Normalize the start angle.
+
+        We keep it in the range [0, 359].
+    */
+    if (config.startAngleDeg < 0 || config.startAngleDeg >= 360) {
+        addInputError(
+            filePath + ": startAngleDeg should be in range [0, 359]. Got " +
+            std::to_string(config.startAngleDeg) + ". Normalizing it."
+        );
+
+        config.startAngleDeg = config.startAngleDeg % 360;
+
+        if (config.startAngleDeg < 0) {
+            config.startAngleDeg += 360;
+        }
+    }
+
+    /*
+        Validate boundaries.
+
+        If min is larger than max, we swap them.
+        This is recoverable and keeps the mission usable.
+    */
+    if (config.minX > config.maxX) {
+        addInputError(
+            filePath + ": minX is larger than maxX. Swapping them."
+        );
+
+        int temp = config.minX;
+        config.minX = config.maxX;
+        config.maxX = temp;
+    }
+
+    if (config.minY > config.maxY) {
+        addInputError(
+            filePath + ": minY is larger than maxY. Swapping them."
+        );
+
+        int temp = config.minY;
+        config.minY = config.maxY;
+        config.maxY = temp;
+    }
+
+    if (config.minZ > config.maxZ) {
+        addInputError(
+            filePath + ": minZ is larger than maxZ. Swapping them."
+        );
+
+        int temp = config.minZ;
+        config.minZ = config.maxZ;
+        config.maxZ = temp;
+    }
+
+    /*
+        Validate resolution.
+    */
+    validatePositive(config.resolutionCm, 100, "resolutionCm", filePath);
+
+    /*
+        Validate start position.
+
+        If the start position is outside mission boundaries,
+        move it to the minimum boundary corner.
+    */
+    bool startOutside =
+        config.startPosition.x < config.minX ||
+        config.startPosition.x > config.maxX ||
+        config.startPosition.y < config.minY ||
+        config.startPosition.y > config.maxY ||
+        config.startPosition.height < config.minZ ||
+        config.startPosition.height > config.maxZ;
+
+    if (startOutside) {
+        addInputError(
+            filePath +
+            ": start position is outside mission boundaries. "
+            "Using minimum boundary position as start position."
+        );
+
+        config.startPosition = Position{
+            config.minX,
+            config.minY,
+            config.minZ
+        };
+    }
 
     return config;
 }
@@ -157,85 +435,173 @@ MissionConfig ConfigParser::parseMissionConfig(const std::string& filePath) {
 
 GroundTruthMap ConfigParser::parseMapInput(const std::string& filePath) {
     /*
-        Reads map_input.txt.
-
-        This file represents the hidden real world.
-        The drone is NOT allowed to read this map directly.
-        Only the simulator and mock sensors use it.
-
-        Expected simple format:
+        Expected map_input.txt format:
 
         sizeX sizeY sizeHeight
-        then sizeX * sizeY * sizeHeight cell values
+
+        Then sizeX * sizeY * sizeHeight cell values.
 
         Cell values:
-        0 = empty/free
-        1 = occupied/wall/obstacle
+        0 = free
+        1 = occupied
 
-        Example for sizeX=3, sizeY=2, sizeHeight=1:
-
-        3 2 1
-        0 0 1
-        0 1 0
-
-        This means:
-        height layer 0 has 2 rows.
-        Each row has 3 cells.
-
-        Position meaning:
-        x = column
-        y = row
-        height = height layer
+        Example:
+        10 10 3
+        then 300 values.
     */
 
     std::ifstream file(filePath);
 
-    // If the map input file is missing,
-    // create a small empty default world.
     if (!file.is_open()) {
-        std::cout << "Could not open map input file: " << filePath
-                  << ". Using default empty map."
-                  << std::endl;
+        addInputError(
+            filePath +
+            ": could not open file. Using default empty map 10x10x3."
+        );
 
         return GroundTruthMap(10, 10, 3);
     }
 
-    int sizeX = 0;
-    int sizeY = 0;
-    int sizeHeight = 0;
+    auto readField = [&](const std::string& fieldName, int defaultValue) {
+        std::string token;
 
-    // First line: map dimensions.
-    file >> sizeX >> sizeY >> sizeHeight;
+        if (!(file >> token)) {
+            addInputError(
+                filePath + ": missing " + fieldName +
+                ". Using default value " + std::to_string(defaultValue) + "."
+            );
+            return defaultValue;
+        }
+
+        int value = defaultValue;
+
+        if (!parseIntToken(token, value, fieldName, filePath)) {
+            addInputError(
+                filePath + ": using default value " +
+                std::to_string(defaultValue) +
+                " for " + fieldName + "."
+            );
+            return defaultValue;
+        }
+
+        return value;
+    };
+
+    int sizeX = readField("sizeX", 10);
+    int sizeY = readField("sizeY", 10);
+    int sizeHeight = readField("sizeHeight", 3);
+
+    validatePositive(sizeX, 10, "sizeX", filePath);
+    validatePositive(sizeY, 10, "sizeY", filePath);
+    validatePositive(sizeHeight, 3, "sizeHeight", filePath);
 
     GroundTruthMap map(sizeX, sizeY, sizeHeight);
 
-    /*
-        Read all cells.
+    int expectedCells = sizeX * sizeY * sizeHeight;
 
-        Loop order:
-        1. height layer
-        2. y row
-        3. x column
-
-        So the file is interpreted layer by layer.
-    */
     for (int height = 0; height < sizeHeight; ++height) {
         for (int y = 0; y < sizeY; ++y) {
             for (int x = 0; x < sizeX; ++x) {
+                std::string token;
+
+                if (!(file >> token)) {
+                    addInputError(
+                        filePath + ": missing cell value at position (" +
+                        std::to_string(x) + ", " +
+                        std::to_string(y) + ", " +
+                        std::to_string(height) +
+                        "). Using 0 = free."
+                    );
+
+                    map.setCell(Position{x, y, height}, CellState::Free);
+                    continue;
+                }
+
                 int value = 0;
 
-                file >> value;
+                if (!parseIntToken(token, value, "map cell", filePath)) {
+                    addInputError(
+                        filePath + ": using 0 = free for bad cell at position (" +
+                        std::to_string(x) + ", " +
+                        std::to_string(y) + ", " +
+                        std::to_string(height) + ")."
+                    );
 
-                Position pos{x, y, height};
+                    map.setCell(Position{x, y, height}, CellState::Free);
+                    continue;
+                }
 
-                if (value == 1) {
-                    map.setCell(pos, CellState::Occupied);
+                if (value == 0) {
+                    map.setCell(Position{x, y, height}, CellState::Free);
+                } else if (value == 1) {
+                    map.setCell(Position{x, y, height}, CellState::Occupied);
                 } else {
-                    map.setCell(pos, CellState::Free);
+                    addInputError(
+                        filePath + ": invalid cell value " +
+                        std::to_string(value) +
+                        " at position (" +
+                        std::to_string(x) + ", " +
+                        std::to_string(y) + ", " +
+                        std::to_string(height) +
+                        "). Expected 0 or 1. Using 0 = free."
+                    );
+
+                    map.setCell(Position{x, y, height}, CellState::Free);
                 }
             }
         }
     }
 
+    /*
+        Check for extra values after the expected number of cells.
+
+        Extra values are recoverable: we ignore them but report them.
+    */
+    std::string extraToken;
+    int extraCount = 0;
+
+    while (file >> extraToken) {
+        ++extraCount;
+    }
+
+    if (extraCount > 0) {
+        addInputError(
+            filePath + ": found " +
+            std::to_string(extraCount) +
+            " extra cell value(s) after expected " +
+            std::to_string(expectedCells) +
+            " cells. Ignoring extras."
+        );
+    }
+
     return map;
+}
+
+void ConfigParser::clearInputErrors() {
+    inputErrors.clear();
+}
+
+void ConfigParser::writeInputErrors(const std::string& filePath) {
+    /*
+        Assignment requirement:
+        Create input_errors.txt only if there are recoverable input errors.
+
+        So if there are no errors, we remove an old file if it exists.
+    */
+    if (inputErrors.empty()) {
+        std::remove(filePath.c_str());
+        return;
+    }
+
+    std::ofstream file(filePath);
+
+    if (!file.is_open()) {
+        std::cout << "Could not create input errors file: "
+                  << filePath
+                  << std::endl;
+        return;
+    }
+
+    for (const std::string& error : inputErrors) {
+        file << error << "\n";
+    }
 }

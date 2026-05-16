@@ -50,13 +50,19 @@ bool MockMovementDriver::canMoveTo(const Position& position) const {
     CellState cell = worldMap.getCell(position);
 
     if (cell == CellState::OutOfBounds) {
-        std::cout << "Movement blocked: target position is out of bounds"
+        std::cout << "Movement blocked: target position is out of bounds at "
+                  << position.x << ", "
+                  << position.y << ", "
+                  << position.height
                   << std::endl;
         return false;
     }
 
     if (cell == CellState::Occupied) {
-        std::cout << "Movement blocked: target position is occupied"
+        std::cout << "Movement blocked: target position is occupied at "
+                  << position.x << ", "
+                  << position.y << ", "
+                  << position.height
                   << std::endl;
         return false;
     }
@@ -118,30 +124,44 @@ bool MockMovementDriver::advance(Cm distance) {
         return false;
     }
 
-    Position nextPosition = droneState.pose.position;
+    if (distance == 0) {
+        return true;
+    }
+
     Degree direction = normalizeAngle(droneState.pose.xyAngle);
 
-    if (direction == 0) {
-        nextPosition.x += distance;
-    } else if (direction == 90) {
-        nextPosition.y += distance;
-    } else if (direction == 180) {
-        nextPosition.x -= distance;
-    } else if (direction == 270) {
-        nextPosition.y -= distance;
-    } else {
-        std::cout << "Advance failed: unsupported angle "
-                  << direction
-                  << ". Current simple movement supports only 0, 90, 180, 270."
-                  << std::endl;
-        return false;
+    int step = (distance > 0) ? 1 : -1;
+    int stepsCount = std::abs(distance);
+
+    Position currentPosition = droneState.pose.position;
+
+    for (int i = 0; i < stepsCount; ++i) {
+        Position nextPosition = currentPosition;
+
+        if (direction == 0) {
+            nextPosition.x += step;
+        } else if (direction == 90) {
+            nextPosition.y += step;
+        } else if (direction == 180) {
+            nextPosition.x -= step;
+        } else if (direction == 270) {
+            nextPosition.y -= step;
+        } else {
+            std::cout << "Advance failed: unsupported angle "
+                      << direction
+                      << ". Current simple movement supports only 0, 90, 180, 270."
+                      << std::endl;
+            return false;
+        }
+
+        if (!canMoveTo(nextPosition)) {
+            return false;
+        }
+
+        currentPosition = nextPosition;
     }
 
-    if (!canMoveTo(nextPosition)) {
-        return false;
-    }
-
-    droneState.pose.position = nextPosition;
+    droneState.pose.position = currentPosition;
     return true;
 }
 
